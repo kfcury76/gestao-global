@@ -1,0 +1,1 @@
+ALTER TABLE public.corporate_routes ADD COLUMN frete_fixo numeric DEFAULT 0;
