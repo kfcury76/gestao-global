@@ -12,7 +12,16 @@ serve(async (req) => {
   }
 
   try {
-    const { amount, order_id, description, customer_email, customer_name } = await req.json()
+    const {
+      amount,
+      order_id,
+      description,
+      customer_email,
+      customer_name,
+      success_url,
+      failure_url,
+      pending_url,
+    } = await req.json()
 
     console.log("🔵 Criando preferência:", { amount, order_id, description })
 
@@ -22,7 +31,17 @@ serve(async (req) => {
       throw new Error("MERCADO_PAGO_ACCESS_TOKEN não está configurado")
     }
 
-    const pedidoId = order_id || `TESTE-${Date.now()}`
+    const pedidoId = order_id || `PEDIDO-${Date.now()}`
+    const unitPrice = parseFloat(String(amount))
+
+    if (isNaN(unitPrice) || unitPrice <= 0) {
+      throw new Error(`Valor inválido: ${amount}`)
+    }
+
+    const defaultBase = "https://cosiararas.com.br"
+    const resolvedSuccessUrl = success_url || `${defaultBase}/pedido-confirmado?order_id=${pedidoId}`
+    const resolvedFailureUrl = failure_url || `${defaultBase}/marmita`
+    const resolvedPendingUrl = pending_url || `${defaultBase}/marmita`
 
     const preference = {
       items: [
@@ -30,23 +49,23 @@ serve(async (req) => {
           title: description || "Pedido",
           quantity: 1,
           currency_id: "BRL",
-          unit_price: amount,
+          unit_price: unitPrice,
         },
       ],
       payer: {
         name: customer_name || "Cliente",
-        email: customer_email || "cliente@test.com",
+        email: customer_email || "cliente@cosiararas.com.br",
       },
       back_urls: {
-        success: `https://cosi.lovable.app/pedido-confirmado?order_id=${pedidoId}`,
-        failure: "https://cosi.lovable.app/marmita",
-        pending: "https://cosi.lovable.app/marmita",
+        success: resolvedSuccessUrl,
+        failure: resolvedFailureUrl,
+        pending: resolvedPendingUrl,
       },
       auto_return: "approved",
       external_reference: pedidoId,
       expires: false,
       binary_mode: true,
-      statement_descriptor: "TESTE",
+      statement_descriptor: "COSI ARARAS",
       payment_methods: {
         installments: 1,
         default_installments: 1,
