@@ -16,7 +16,7 @@ Reescrito com proteínas e preços corretos do Cosí:
 - `isStoreOpen()` retornando `true` (modo teste) — **reativar depois**
 - Grupo `tamanho` removido do data (approach antigo)
 
-### 3. `controle/src/pages/Marmitaria.tsx` (repo admcosi)
+### 3. `controle/src/pages/Marmitaria.tsx` (repo kfcury76/controle)
 Reescrito com 3 abas:
 - **Pedidos Online**: filtro `.in('source', ['marmitaria_araras', 'cosiararas'])` + badges de source
 - **Cardápio Cosí** (NOVA): tabela editável de preços por proteína (Pequena + Família) + taxas de entrega
@@ -25,7 +25,7 @@ Reescrito com 3 abas:
 
 ### 4. Deploy ✅
 - `cosiararas.com.br` → deployado com sucesso
-- `controlecosi.vercel.app` → deployado com sucesso
+- `controle.cosiararas.com.br` → deployado com sucesso
 
 ---
 
@@ -84,4 +84,4 @@ O app Next.js ainda não está hospedado.
 ## Arquivos principais modificados nesta sessão
 - `cosiararas/src/data/cosiMarmitaMenu.ts`
 - `cosiararas/src/pages/MarmitaCardapio.tsx`
-- `controle/src/pages/Marmitaria.tsx` (repo admcosi)
+- `controle/src/pages/Marmitaria.tsx` (repo kfcury76/controle)

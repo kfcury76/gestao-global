@@ -7,16 +7,18 @@
 
 | App | URL / Local | Stack | Status |
 |---|---|---|---|
-| **App de Vendas (Cosí)** | `cosiararas.lovable.app` | Lovable (React+Vite+TS) | ✅ Em uso |
-| **App da Marmitaria** | `marmitaria_araras/marmitaria-vendas/` | Next.js 16, React 19 | ✅ Pronto (falta hospedar) |
-| **App Admin (Cosí)** | `admcosi.lovable.app` | Lovable (React+Vite+TS) | ⚠️ Integrações parciais |
-| **Daemon Impressão** | `marmitaria_araras/marmitaria-print/` | Node.js + tsx | ✅ Criado (IPs placeholder) |
+| **App de Vendas (Cosí)** | `cosiararas.com.br` | React + Vite + TS | ✅ Em produção |
+| **App da Marmitaria** | `marmitaria-vendas/` | Next.js 16, React 19 | ✅ Pronto (falta hospedar) |
+| **App Controle** | `controle.cosiararas.com.br` | React + Vite + TS + shadcn/ui | ✅ Em produção |
+| **Daemon Impressão** | `marmitaria-print/` | Node.js + tsx | ✅ Criado (IPs placeholder) |
 
 ## GitHub Repos
 
 - `kfcury76/cosiararas` — App de vendas público do Cosí
-- `kfcury76/admcosi` — Painel admin do Cosí
+- `kfcury76/controle` — Painel admin/controle (OFICIAL) ✅
 - `kfcury76/marmitaria-vendas` — App de vendas da Marmitaria (Next.js)
+
+> ⚠️ **DESCONTINUADO:** `kfcury76/admcosi` foi substituído por `kfcury76/controle`
 
 ## Infraestrutura
 
@@ -52,7 +54,7 @@ Ao inserir, preencher com defaults: `meal_size='P'`, `meal_size_name=nome_item`,
 
 - **Senha admin padrão:** `Kfcury76@` (todos os apps)
 - `marmitaria-vendas` → `ADMIN_PASSWORD` em `.env.local`
-- `admcosi` → implementar auth com mesma senha quando necessário
+- `controle` → auth já implementada (Supabase Auth)
 - Admin URL: `<producao>/admin` — autenticação Bearer token
 
 ## Arquivos-chave
@@ -73,11 +75,13 @@ Ao inserir, preencher com defaults: `meal_size='P'`, `meal_size_name=nome_item`,
 - `src/pages/MarmitaCorporativa.tsx` — rota `/marmita/:slug` para corporativos
 - `src/hooks/useMarmitaMenu.ts` — busca cardápio real do Supabase
 
-### admcosi (Lovable/Vite)
+### controle (React + Vite + shadcn/ui)
 - `src/pages/Corporativo.tsx` — gestão de rotas corporativas
-  - `BASE_URL = 'https://cosiararas.lovable.app/marmita'` ✅ (já corrigido)
 - `src/pages/Encomendas.tsx` — gestão de encomendas
 - `src/pages/Financeiro.tsx` — lançamentos financeiros
+- `src/pages/Marmitaria.tsx` — pedidos online + cardápio + POS
+- `src/pages/RH.tsx` — gestão de recursos humanos
+- `src/components/print/` — sistema de impressão
 
 ### marmitaria-print (Daemon)
 - `src/index.ts` — daemon de impressão
@@ -101,9 +105,8 @@ Ao inserir, preencher com defaults: `meal_size='P'`, `meal_size_name=nome_item`,
 ## Pendente
 
 - [ ] Deploy `marmitaria-vendas` no Vercel
-- [ ] Definir `VITE_MARMITARIA_URL` nas env vars do cosiararas (Lovable)
+- [ ] Definir `VITE_MARMITARIA_URL` nas env vars do cosiararas
 - [ ] IPs reais das impressoras no `.env` do daemon
-- [ ] `admcosi`: dashboard real, financeiro (bug `amount`→`total_amount`), aba Marmitaria
 - [ ] Rodar migrations 03 e 04 em produção (se ainda não feito)
 
 ## Rodar o Daemon
