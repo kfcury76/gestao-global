@@ -1,14 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Configuração do Supabase (com fallback hardcoded)
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://energetictriggerfish-supabase.cloudfy.live';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzcxMjQ3MjE5LCJleHAiOjE4MDI3ODMyMTl9.ptnClNNSMAfgXzL5YkmAjY_Y1NYAOhya1u1Uzoxrolw';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Variáveis de ambiente do Supabase não encontradas. Verifique o arquivo .env ou o dashboard da Vercel.');
+if (!import.meta.env.VITE_SUPABASE_URL) {
+  console.warn('Usando variáveis de ambiente padrão do Supabase (hardcoded)');
 }
 
 // Cliente padrão — usa anon key para segurança
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const supabaseAdmin = supabase;
 
 // Tipos
