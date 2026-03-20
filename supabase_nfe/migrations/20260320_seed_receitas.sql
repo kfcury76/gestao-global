@@ -39,7 +39,7 @@ INSERT INTO sales (sale_date, business_unit, customer_name, gross_amount, discou
 (CURRENT_DATE - INTERVAL '1 day', 'cosi', 'Cliente B', 85.50, 5.50, 80.00, 'dinheiro',
   (SELECT id FROM revenue_categories WHERE name = 'Vendas Balcão' LIMIT 1), 'completed'),
 
-(CURRENT_DATE - INTERVAL '2 days', 'cosi', 'Buffet Festa Aniversário', 1200.00, 0, 1200.00, 'transferencia',
+(CURRENT_DATE - INTERVAL '2 days', 'cosi', 'Buffet Festa Aniversário', 1200.00, 0, 1200.00, 'pix',
   (SELECT id FROM revenue_categories WHERE name = 'Buffet/Eventos' LIMIT 1), 'completed'),
 
 (CURRENT_DATE - INTERVAL '3 days', 'cosi', 'Cliente C', 220.00, 20.00, 200.00, 'debito',
@@ -104,10 +104,10 @@ ON CONFLICT DO NOTHING;
 -- ============================================================================
 
 INSERT INTO payments (payment_date, business_unit, payee_name, payee_document, amount, payment_category, payment_method, status) VALUES
-(CURRENT_DATE - INTERVAL '3 days', 'cosi', 'Fornecedor ABC Alimentos Ltda', '12.345.678/0001-90', 350.00, 'Fornecedores', 'transferencia', 'paid'),
+(CURRENT_DATE - INTERVAL '3 days', 'cosi', 'Fornecedor ABC Alimentos Ltda', '12.345.678/0001-90', 350.00, 'Fornecedores', 'pix', 'paid'),
 (CURRENT_DATE - INTERVAL '1 day', 'cosi', 'CPFL Energia', '02.998.898/0001-35', 280.00, 'Energia Elétrica', 'boleto', 'paid'),
 (CURRENT_DATE - INTERVAL '5 days', 'cosi', 'Imobiliária XYZ', '11.222.333/0001-44', 1500.00, 'Aluguel', 'pix', 'paid'),
-(CURRENT_DATE - INTERVAL '2 days', 'marmitaria', 'Distribuidora Alimentos SA', '22.333.444/0001-55', 280.00, 'Fornecedores', 'transferencia', 'paid'),
+(CURRENT_DATE - INTERVAL '2 days', 'marmitaria', 'Distribuidora Alimentos SA', '22.333.444/0001-55', 280.00, 'Fornecedores', 'pix', 'paid'),
 (CURRENT_DATE, 'both', 'Telefônica Brasil SA', '02.558.157/0001-62', 120.00, 'Telefonia/Internet', 'debito', 'paid')
 ON CONFLICT DO NOTHING;
 
