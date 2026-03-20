@@ -1,12 +1,9 @@
 // ============================================================================
-// Edge Function: extract-secullum-pdf
-// Descrição: Extrai dados de folha de ponto do Secullum Web Pro (PDF/Excel)
-// Input: PDF ou Excel em base64
-// Output: Array de funcionários com dados de ponto
+// Edge Function: extract-secullum-pdf (CSV Version)
+// Descrição: Extrai dados de folha de ponto do Secullum (CSV convertido manualmente)
+// Input: { file_content: string, file_type: "csv", reference_month?: string }
+// Output: { success: true, employees: [...], matched: N, not_matched: N }
 // ============================================================================
-
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,21 +17,18 @@ interface SecullumEmployee {
   overtime_65_hours: number // HE 65%
   overtime_100_hours: number // HE 100%
   night_hours: number // hora noturna
+  employee_id?: string | null
+  base_salary?: number | null
+  match_status: 'found' | 'not_found' | 'ambiguous'
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    )
-
     const { file_content, file_type, reference_month } = await req.json()
 
     if (!file_content || !file_type) {
@@ -44,27 +38,68 @@ serve(async (req) => {
       )
     }
 
-    let employees: SecullumEmployee[] = []
-
-    if (file_type === 'pdf') {
-      employees = await extractFromPDF(file_content)
-    } else if (file_type === 'excel' || file_type === 'xlsx') {
-      employees = await extractFromExcel(file_content)
-    } else {
+    if (file_type !== 'csv') {
       return new Response(
-        JSON.stringify({ error: 'file_type inválido. Use: pdf, excel, xlsx' }),
+        JSON.stringify({
+          error: 'Apenas CSV é suportado. Converta o PDF/Excel do Secullum para CSV antes de enviar.',
+          supported_formats: ['csv'],
+          csv_format_example: 'nome,faltas,atrasos_minutos,he_65,he_100,horas_noturnas'
+        }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Enriquecer com dados de funcionários cadastrados
-    const enrichedEmployees = await enrichWithEmployeeData(supabaseClient, employees)
+    // Parsear CSV
+    const employees = parseCSV(file_content)
+
+    if (employees.length === 0) {
+      return new Response(
+        JSON.stringify({ error: 'Nenhum funcionário encontrado no CSV. Verifique o formato.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Buscar funcionários do Supabase para matching
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('SUPABASE_URL ou SUPABASE_ANON_KEY não configurados')
+    }
+
+    const dbEmployeesResponse = await fetch(
+      `${supabaseUrl}/rest/v1/employees?is_active=eq.true&select=id,name,cpf,position,department,base_salary`,
+      {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+        }
+      }
+    )
+
+    if (!dbEmployeesResponse.ok) {
+      throw new Error(`Erro ao buscar funcionários: ${dbEmployeesResponse.status}`)
+    }
+
+    const dbEmployees = await dbEmployeesResponse.json()
+
+    // Enriquecer com dados de funcionários (matching por nome)
+    const enrichedEmployees = enrichWithEmployeeData(employees, dbEmployees)
+
+    // Contar matching
+    const matched = enrichedEmployees.filter(emp => emp.match_status === 'found').length
+    const notMatched = enrichedEmployees.filter(emp => emp.match_status === 'not_found').length
+    const ambiguous = enrichedEmployees.filter(emp => emp.match_status === 'ambiguous').length
 
     return new Response(
       JSON.stringify({
         success: true,
         reference_month: reference_month || new Date().toISOString().slice(0, 7),
-        employees_count: employees.length,
+        total_employees: employees.length,
+        matched: matched,
+        not_matched: notMatched,
+        ambiguous: ambiguous,
         employees: enrichedEmployees
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -80,159 +115,131 @@ serve(async (req) => {
 })
 
 // ============================================================================
-// Extração de PDF (pdfjs-dist)
+// Parser CSV
 // ============================================================================
 
-async function extractFromPDF(base64Content: string): Promise<SecullumEmployee[]> {
-  // Importar pdfjs-dist
-  const pdfjsLib = await import('https://esm.sh/pdfjs-dist@3.11.174')
-
-  // Decodificar base64
-  const binaryString = atob(base64Content)
-  const bytes = new Uint8Array(binaryString.length)
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i)
-  }
-
-  // Carregar PDF
-  const loadingTask = pdfjsLib.getDocument({ data: bytes })
-  const pdf = await loadingTask.promise
-
-  let fullText = ''
-
-  // Extrair texto de todas as páginas
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum)
-    const textContent = await page.getTextContent()
-    const pageText = textContent.items.map((item: any) => item.str).join(' ')
-    fullText += pageText + '\n'
-  }
-
-  // Parser de texto (padrão Secullum)
-  return parseSecullumText(fullText)
-}
-
-// ============================================================================
-// Extração de Excel (xlsx)
-// ============================================================================
-
-async function extractFromExcel(base64Content: string): Promise<SecullumEmployee[]> {
-  const XLSX = await import('https://esm.sh/xlsx@0.18.5')
-
-  // Decodificar base64
-  const binaryString = atob(base64Content)
-  const bytes = new Uint8Array(binaryString.length)
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i)
-  }
-
-  // Ler Excel
-  const workbook = XLSX.read(bytes, { type: 'array' })
-  const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
-  const data = XLSX.utils.sheet_to_json(firstSheet)
-
-  // Parser de dados do Excel
-  return parseSecullumExcel(data)
-}
-
-// ============================================================================
-// Parser de Texto (Secullum PDF)
-// ============================================================================
-
-function parseSecullumText(text: string): SecullumEmployee[] {
+function parseCSV(csvContent: string): SecullumEmployee[] {
   const employees: SecullumEmployee[] = []
-  const lines = text.split('\n')
+  const lines = csvContent.trim().split('\n')
 
-  // Padrões de regex para Secullum Web Pro
-  // Exemplo de linha: "João Silva    Faltas: 2    Atrasos: 45min    HE 65%: 10h    HE 100%: 5h    H.Noturna: 8h"
+  if (lines.length < 2) {
+    throw new Error('CSV vazio ou sem dados')
+  }
 
-  const employeePattern = /^([A-ZÁÉÍÓÚÂÊÔÃÕÇ\s]+)\s+Faltas:\s*(\d+)\s+Atrasos:\s*(\d+)min\s+HE\s*65%:\s*([\d,]+)h\s+HE\s*100%:\s*([\d,]+)h\s+H\.Noturna:\s*([\d,]+)h/i
+  // Primeira linha = cabeçalho
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
 
-  for (const line of lines) {
-    const match = line.match(employeePattern)
+  // Detectar índices das colunas
+  const nameIdx = headers.findIndex(h => h.includes('nome') || h === 'name')
+  const absencesIdx = headers.findIndex(h => h.includes('falta') || h === 'absences')
+  const lateIdx = headers.findIndex(h => h.includes('atraso') || h.includes('late'))
+  const he65Idx = headers.findIndex(h => h.includes('he_65') || h.includes('he65') || h.includes('he 65'))
+  const he100Idx = headers.findIndex(h => h.includes('he_100') || h.includes('he100') || h.includes('he 100'))
+  const nightIdx = headers.findIndex(h => h.includes('noturna') || h.includes('night') || h.includes('horas_noturnas'))
 
-    if (match) {
-      employees.push({
-        name: match[1].trim(),
-        absences: parseInt(match[2]) || 0,
-        late_minutes: parseInt(match[3]) || 0,
-        overtime_65_hours: parseFloat(match[4].replace(',', '.')) || 0,
-        overtime_100_hours: parseFloat(match[5].replace(',', '.')) || 0,
-        night_hours: parseFloat(match[6].replace(',', '.')) || 0,
-      })
+  if (nameIdx === -1) {
+    throw new Error('Coluna "nome" não encontrada no CSV. Certifique-se de que a primeira linha contém os cabeçalhos.')
+  }
+
+  // Parsear cada linha de dados
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (!line) continue
+
+    const values = line.split(',').map(v => v.trim())
+
+    if (values.length < headers.length) {
+      console.warn(`Linha ${i + 1} ignorada: número de colunas inválido`)
+      continue
     }
+
+    const name = values[nameIdx]
+    if (!name) {
+      console.warn(`Linha ${i + 1} ignorada: nome vazio`)
+      continue
+    }
+
+    employees.push({
+      name: name,
+      absences: absencesIdx !== -1 ? parseInt(values[absencesIdx]) || 0 : 0,
+      late_minutes: lateIdx !== -1 ? parseInt(values[lateIdx]) || 0 : 0,
+      overtime_65_hours: he65Idx !== -1 ? parseFloat(values[he65Idx].replace(',', '.')) || 0 : 0,
+      overtime_100_hours: he100Idx !== -1 ? parseFloat(values[he100Idx].replace(',', '.')) || 0 : 0,
+      night_hours: nightIdx !== -1 ? parseFloat(values[nightIdx].replace(',', '.')) || 0 : 0,
+      match_status: 'not_found'
+    })
   }
 
   return employees
 }
 
 // ============================================================================
-// Parser de Excel (Secullum)
+// Matching com Funcionários Cadastrados
 // ============================================================================
 
-function parseSecullumExcel(data: any[]): SecullumEmployee[] {
-  const employees: SecullumEmployee[] = []
-
-  // Assumindo colunas: Nome | Faltas | Atrasos | HE65 | HE100 | HNoturna
-  for (const row of data) {
-    if (row['Nome'] || row['NOME'] || row['nome']) {
-      employees.push({
-        name: (row['Nome'] || row['NOME'] || row['nome']).trim(),
-        absences: parseInt(row['Faltas'] || row['FALTAS'] || row['faltas'] || 0),
-        late_minutes: parseInt(row['Atrasos'] || row['ATRASOS'] || row['atrasos'] || 0),
-        overtime_65_hours: parseFloat(row['HE 65%'] || row['HE65'] || row['he65'] || 0),
-        overtime_100_hours: parseFloat(row['HE 100%'] || row['HE100'] || row['he100'] || 0),
-        night_hours: parseFloat(row['H.Noturna'] || row['Hora Noturna'] || row['noturna'] || 0),
-      })
-    }
-  }
-
-  return employees
-}
-
-// ============================================================================
-// Enriquecer com Dados de Funcionários Cadastrados
-// ============================================================================
-
-async function enrichWithEmployeeData(
-  supabase: any,
-  employees: SecullumEmployee[]
-): Promise<any[]> {
-  // Buscar todos os funcionários ativos
-  const { data: dbEmployees, error } = await supabase
-    .from('employees')
-    .select('id, name, cpf, position, department, base_salary')
-    .eq('is_active', true)
-
-  if (error) {
-    console.error('Erro ao buscar funcionários:', error)
-    return employees.map(emp => ({ ...emp, employee_id: null, base_salary: null, match_status: 'not_found' }))
-  }
-
-  // Match por nome (normalizado)
+function enrichWithEmployeeData(
+  employees: SecullumEmployee[],
+  dbEmployees: any[]
+): SecullumEmployee[] {
   return employees.map(emp => {
     const normalizedName = normalizeString(emp.name)
-    const match = dbEmployees.find((dbEmp: any) =>
+
+    // Busca exata
+    const exactMatch = dbEmployees.find((dbEmp: any) =>
       normalizeString(dbEmp.name) === normalizedName
     )
 
-    if (match) {
+    if (exactMatch) {
       return {
         ...emp,
-        employee_id: match.id,
-        cpf: match.cpf,
-        position: match.position,
-        department: match.department,
-        base_salary: match.base_salary,
+        employee_id: exactMatch.id,
+        base_salary: exactMatch.base_salary,
+        cpf: exactMatch.cpf,
+        position: exactMatch.position,
+        department: exactMatch.department,
         match_status: 'found'
       }
-    } else {
+    }
+
+    // Busca fuzzy (contém)
+    const fuzzyMatches = dbEmployees.filter((dbEmp: any) => {
+      const dbNormalized = normalizeString(dbEmp.name)
+      return dbNormalized.includes(normalizedName) || normalizedName.includes(dbNormalized)
+    })
+
+    if (fuzzyMatches.length === 1) {
+      return {
+        ...emp,
+        employee_id: fuzzyMatches[0].id,
+        base_salary: fuzzyMatches[0].base_salary,
+        cpf: fuzzyMatches[0].cpf,
+        position: fuzzyMatches[0].position,
+        department: fuzzyMatches[0].department,
+        match_status: 'found',
+        match_type: 'fuzzy'
+      }
+    }
+
+    if (fuzzyMatches.length > 1) {
       return {
         ...emp,
         employee_id: null,
         base_salary: null,
-        match_status: 'not_found'
+        match_status: 'ambiguous',
+        possible_matches: fuzzyMatches.map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          position: m.position
+        }))
       }
+    }
+
+    // Não encontrado
+    return {
+      ...emp,
+      employee_id: null,
+      base_salary: null,
+      match_status: 'not_found'
     }
   })
 }
@@ -248,4 +255,5 @@ function normalizeString(str: string): string {
     .replace(/[\u0300-\u036f]/g, '') // remove acentos
     .replace(/[^a-z\s]/g, '') // remove caracteres especiais
     .trim()
+    .replace(/\s+/g, ' ') // normaliza espaços
 }

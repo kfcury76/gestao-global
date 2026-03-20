@@ -1,31 +1,21 @@
 // ============================================================================
-// Edge Function: generate-payslip-pdf
-// Descrição: Gera PDF do contracheque (payslip)
-// Input: payroll_entry_id
-// Output: URL do PDF (Supabase Storage ou Google Drive)
+// Edge Function: generate-payslip-pdf (HTML Version)
+// Descrição: Gera HTML formatado do contracheque para conversão em PDF no frontend
+// Input: { payroll_entry_id: string }
+// Output: { success: true, html: string, employee_name: string, reference_month: string }
 // ============================================================================
-
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { PDFDocument, rgb, StandardFonts } from 'https://esm.sh/pdf-lib@1.17.1'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    )
-
     const { payroll_entry_id } = await req.json()
 
     if (!payroll_entry_id) {
@@ -35,68 +25,66 @@ serve(async (req) => {
       )
     }
 
-    // Buscar lançamento de folha
-    const { data: payroll, error: payrollError } = await supabaseClient
-      .from('payroll_entries')
-      .select(`
-        *,
-        employee:employees (
-          name,
-          cpf,
-          position,
-          department
-        )
-      `)
-      .eq('id', payroll_entry_id)
-      .single()
+    // Buscar dados do Supabase via REST API
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
 
-    if (payrollError || !payroll) {
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('SUPABASE_URL ou SUPABASE_ANON_KEY não configurados')
+    }
+
+    // Buscar lançamento de folha com dados do funcionário
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/payroll_entries?id=eq.${payroll_entry_id}&select=*,employee:employees(name,cpf,position,department)`,
+      {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+        }
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Erro ao buscar payroll_entry: ${response.status} - ${errorText}`)
+    }
+
+    const data = await response.json()
+
+    if (!data || data.length === 0) {
       return new Response(
         JSON.stringify({ error: 'Lançamento de folha não encontrado' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Gerar PDF
-    const pdfBytes = await generatePayslipPDF(payroll)
+    const payroll = data[0]
+    const employee = payroll.employee
 
-    // Upload para Supabase Storage
-    const fileName = `contracheque_${payroll.employee.name.replace(/\s/g, '_')}_${payroll.reference_month}.pdf`
-    const filePath = `payslips/${new Date().getFullYear()}/${fileName}`
-
-    const { data: uploadData, error: uploadError } = await supabaseClient.storage
-      .from('documents')
-      .upload(filePath, pdfBytes, {
-        contentType: 'application/pdf',
-        upsert: true
-      })
-
-    if (uploadError) {
-      throw uploadError
+    if (!employee) {
+      return new Response(
+        JSON.stringify({ error: 'Funcionário não encontrado para este lançamento' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
-    // Obter URL pública
-    const { data: publicUrl } = supabaseClient.storage
-      .from('documents')
-      .getPublicUrl(filePath)
-
-    // Atualizar payroll_entry com URL do PDF
-    await supabaseClient
-      .from('payroll_entries')
-      .update({ pdf_url: publicUrl.publicUrl })
-      .eq('id', payroll_entry_id)
+    // Gerar HTML do contracheque
+    const html = generatePayslipHTML(payroll, employee)
 
     return new Response(
       JSON.stringify({
         success: true,
-        pdf_url: publicUrl.publicUrl,
-        file_name: fileName
+        html: html,
+        employee_name: employee.name,
+        reference_month: formatMonth(payroll.reference_month),
+        payroll_entry_id: payroll.id
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (error) {
-    console.error('Erro ao gerar contracheque:', error)
+    console.error('Erro ao gerar contracheque HTML:', error)
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -105,114 +93,379 @@ serve(async (req) => {
 })
 
 // ============================================================================
-// Geração de PDF do Contracheque
+// Geração de HTML do Contracheque
 // ============================================================================
 
-async function generatePayslipPDF(payroll: any): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.create()
-  const page = pdfDoc.addPage([595, 842]) // A4
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+function generatePayslipHTML(payroll: any, employee: any): string {
+  const monthFormatted = formatMonth(payroll.reference_month)
 
-  const { width, height } = page.getSize()
-  let yPosition = height - 50
+  // Calcular totais
+  const totalProventos =
+    (payroll.base_salary || 0) +
+    (payroll.overtime_65_value || 0) +
+    (payroll.overtime_100_value || 0) +
+    (payroll.night_shift_value || 0) +
+    (payroll.other_earnings || 0)
 
-  // Helper para desenhar linha
-  const drawText = (text: string, x: number, size: number, isBold = false) => {
-    page.drawText(text, {
-      x,
-      y: yPosition,
-      size,
-      font: isBold ? fontBold : font,
-      color: rgb(0, 0, 0)
-    })
-    yPosition -= size + 5
-  }
+  const totalDescontos =
+    (payroll.discounts || 0) +
+    (payroll.inss_employee || 0)
 
-  // Cabeçalho
-  drawText('CONTRACHEQUE', 250, 16, true)
-  yPosition -= 10
-  drawText('Empório Cosi', 230, 12)
-  yPosition -= 20
+  return `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contracheque - ${employee.name} - ${monthFormatted}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 20mm;
+    }
 
-  // Dados do Funcionário
-  drawText(`Funcionário: ${payroll.employee.name}`, 50, 11)
-  drawText(`CPF: ${payroll.employee.cpf || 'N/A'}`, 50, 11)
-  drawText(`Cargo: ${payroll.employee.position}`, 50, 11)
-  drawText(`Departamento: ${payroll.employee.department}`, 50, 11)
-  drawText(`Mês de Referência: ${formatMonth(payroll.reference_month)}`, 50, 11)
-  yPosition -= 10
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-  // Linha separadora
-  page.drawLine({
-    start: { x: 50, y: yPosition },
-    end: { x: width - 50, y: yPosition },
-    thickness: 1,
-    color: rgb(0, 0, 0)
-  })
-  yPosition -= 15
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.4;
+      color: #333;
+      max-width: 210mm;
+      margin: 0 auto;
+      padding: 10mm;
+    }
 
-  // PROVENTOS
-  drawText('PROVENTOS', 50, 12, true)
-  drawText(`Salário Base: R$ ${payroll.base_salary.toFixed(2)}`, 70, 10)
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 3px solid #2c3e50;
+    }
 
-  if (payroll.overtime_65_value > 0) {
-    drawText(`Hora Extra 65%: R$ ${payroll.overtime_65_value.toFixed(2)}`, 70, 10)
-  }
+    .header h1 {
+      font-size: 24pt;
+      font-weight: bold;
+      color: #2c3e50;
+      margin-bottom: 5px;
+    }
 
-  if (payroll.overtime_100_value > 0) {
-    drawText(`Hora Extra 100%: R$ ${payroll.overtime_100_value.toFixed(2)}`, 70, 10)
-  }
+    .header .company {
+      font-size: 14pt;
+      color: #7f8c8d;
+      margin-bottom: 10px;
+    }
 
-  if (payroll.night_shift_value > 0) {
-    drawText(`Hora Noturna: R$ ${payroll.night_shift_value.toFixed(2)}`, 70, 10)
-  }
+    .info-section {
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #ecf0f1;
+      border-radius: 5px;
+    }
 
-  if (payroll.other_earnings > 0) {
-    drawText(`Outros Proventos: R$ ${payroll.other_earnings.toFixed(2)}`, 70, 10)
-  }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 5px 0;
+      padding: 5px 0;
+    }
 
-  yPosition -= 5
+    .info-label {
+      font-weight: bold;
+      color: #34495e;
+    }
 
-  // DESCONTOS
-  drawText('DESCONTOS', 50, 12, true)
+    .info-value {
+      color: #2c3e50;
+    }
 
-  if (payroll.discounts > 0) {
-    drawText(`Faltas/Atrasos: R$ ${payroll.discounts.toFixed(2)}`, 70, 10)
-  }
+    .section-title {
+      font-size: 14pt;
+      font-weight: bold;
+      color: #2c3e50;
+      margin: 25px 0 15px 0;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #3498db;
+    }
 
-  drawText(`INSS: R$ ${payroll.inss_employee.toFixed(2)}`, 70, 10)
-  yPosition -= 10
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+    }
 
-  // Linha separadora
-  page.drawLine({
-    start: { x: 50, y: yPosition },
-    end: { x: width - 50, y: yPosition },
-    thickness: 1,
-    color: rgb(0, 0, 0)
-  })
-  yPosition -= 15
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border: 1px solid #bdc3c7;
+    }
 
-  // TOTAIS
-  drawText(`SALÁRIO BRUTO: R$ ${payroll.gross_total.toFixed(2)}`, 50, 11, true)
-  drawText(`TOTAL DE DESCONTOS: R$ ${(payroll.discounts + payroll.inss_employee).toFixed(2)}`, 50, 11, true)
-  drawText(`SALÁRIO LÍQUIDO: R$ ${payroll.net_total.toFixed(2)}`, 50, 13, true)
+    th {
+      background-color: #34495e;
+      color: white;
+      font-weight: bold;
+      font-size: 11pt;
+    }
 
-  yPosition -= 20
+    td {
+      background-color: #fff;
+    }
 
-  // Informações adicionais
-  drawText('INFORMAÇÕES ADICIONAIS:', 50, 10, true)
-  drawText(`FGTS (8%): R$ ${payroll.fgts.toFixed(2)} (depositado pela empresa)`, 70, 9)
-  drawText(`INSS Patronal: R$ ${payroll.inss_employer.toFixed(2)} (pago pela empresa)`, 70, 9)
+    tr:nth-child(even) td {
+      background-color: #f8f9fa;
+    }
 
-  yPosition -= 30
+    .value-column {
+      text-align: right;
+      font-weight: 500;
+    }
 
-  // Rodapé
-  drawText('_____________________________', 80, 9)
-  drawText('Assinatura do Funcionário', 100, 9)
+    .total-row {
+      font-weight: bold;
+      background-color: #3498db !important;
+      color: white !important;
+    }
 
-  return pdfDoc.save()
+    .total-row td {
+      background-color: #3498db;
+      color: white;
+      font-size: 12pt;
+      padding: 12px;
+    }
+
+    .final-total {
+      background-color: #27ae60 !important;
+    }
+
+    .final-total td {
+      background-color: #27ae60;
+      font-size: 14pt;
+      padding: 15px;
+    }
+
+    .additional-info {
+      margin-top: 30px;
+      padding: 15px;
+      background-color: #fff3cd;
+      border-left: 4px solid #ffc107;
+      border-radius: 5px;
+    }
+
+    .additional-info h3 {
+      color: #856404;
+      margin-bottom: 10px;
+      font-size: 12pt;
+    }
+
+    .additional-info p {
+      margin: 5px 0;
+      color: #856404;
+      font-size: 10pt;
+    }
+
+    .signature-section {
+      margin-top: 50px;
+      padding-top: 30px;
+      display: flex;
+      justify-content: space-around;
+    }
+
+    .signature-box {
+      text-align: center;
+      width: 40%;
+    }
+
+    .signature-line {
+      border-top: 2px solid #2c3e50;
+      margin-top: 60px;
+      padding-top: 10px;
+      font-size: 10pt;
+      color: #7f8c8d;
+    }
+
+    .footer {
+      margin-top: 30px;
+      padding-top: 15px;
+      border-top: 1px solid #bdc3c7;
+      text-align: center;
+      font-size: 9pt;
+      color: #95a5a6;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+
+      .no-print {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- CABEÇALHO -->
+  <div class="header">
+    <h1>CONTRACHEQUE</h1>
+    <div class="company">Empório Cosi</div>
+    <div style="font-size: 10pt; color: #95a5a6;">CNPJ: 00.000.000/0001-00</div>
+  </div>
+
+  <!-- DADOS DO FUNCIONÁRIO -->
+  <div class="info-section">
+    <div class="info-row">
+      <span class="info-label">Funcionário:</span>
+      <span class="info-value">${employee.name}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">CPF:</span>
+      <span class="info-value">${employee.cpf || 'N/A'}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Cargo:</span>
+      <span class="info-value">${employee.position || 'N/A'}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Departamento:</span>
+      <span class="info-value">${employee.department || 'N/A'}</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Mês de Referência:</span>
+      <span class="info-value">${monthFormatted}</span>
+    </div>
+  </div>
+
+  <!-- PROVENTOS -->
+  <h2 class="section-title">PROVENTOS</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Descrição</th>
+        <th class="value-column">Valor (R$)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Salário Base</td>
+        <td class="value-column">${formatCurrency(payroll.base_salary || 0)}</td>
+      </tr>
+      ${payroll.overtime_65_value > 0 ? `
+      <tr>
+        <td>Hora Extra 65% (${payroll.overtime_65_hours || 0}h)</td>
+        <td class="value-column">${formatCurrency(payroll.overtime_65_value)}</td>
+      </tr>
+      ` : ''}
+      ${payroll.overtime_100_value > 0 ? `
+      <tr>
+        <td>Hora Extra 100% (${payroll.overtime_100_hours || 0}h)</td>
+        <td class="value-column">${formatCurrency(payroll.overtime_100_value)}</td>
+      </tr>
+      ` : ''}
+      ${payroll.night_shift_value > 0 ? `
+      <tr>
+        <td>Hora Noturna (${payroll.night_hours || 0}h)</td>
+        <td class="value-column">${formatCurrency(payroll.night_shift_value)}</td>
+      </tr>
+      ` : ''}
+      ${payroll.other_earnings > 0 ? `
+      <tr>
+        <td>Outros Proventos</td>
+        <td class="value-column">${formatCurrency(payroll.other_earnings)}</td>
+      </tr>
+      ` : ''}
+      <tr class="total-row">
+        <td>TOTAL DE PROVENTOS</td>
+        <td class="value-column">${formatCurrency(totalProventos)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- DESCONTOS -->
+  <h2 class="section-title">DESCONTOS</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Descrição</th>
+        <th class="value-column">Valor (R$)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${payroll.discounts > 0 ? `
+      <tr>
+        <td>Faltas/Atrasos (${payroll.absences || 0} dias, ${payroll.late_minutes || 0} min)</td>
+        <td class="value-column">${formatCurrency(payroll.discounts)}</td>
+      </tr>
+      ` : ''}
+      <tr>
+        <td>INSS (Contribuição do Funcionário)</td>
+        <td class="value-column">${formatCurrency(payroll.inss_employee || 0)}</td>
+      </tr>
+      <tr class="total-row">
+        <td>TOTAL DE DESCONTOS</td>
+        <td class="value-column">${formatCurrency(totalDescontos)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- TOTAIS FINAIS -->
+  <h2 class="section-title">RESUMO FINANCEIRO</h2>
+  <table>
+    <tbody>
+      <tr>
+        <td><strong>Salário Bruto</strong></td>
+        <td class="value-column"><strong>${formatCurrency(payroll.gross_total || 0)}</strong></td>
+      </tr>
+      <tr>
+        <td><strong>(-) Total de Descontos</strong></td>
+        <td class="value-column"><strong>${formatCurrency(totalDescontos)}</strong></td>
+      </tr>
+      <tr class="final-total">
+        <td><strong>SALÁRIO LÍQUIDO A RECEBER</strong></td>
+        <td class="value-column"><strong>${formatCurrency(payroll.net_total || 0)}</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- INFORMAÇÕES ADICIONAIS -->
+  <div class="additional-info">
+    <h3>INFORMAÇÕES ADICIONAIS - ENCARGOS PATRONAIS</h3>
+    <p><strong>FGTS (8%):</strong> R$ ${formatCurrency(payroll.fgts || 0)} - Depositado pela empresa em sua conta do FGTS</p>
+    <p><strong>INSS Patronal:</strong> R$ ${formatCurrency(payroll.inss_employer || 0)} - Contribuição da empresa ao INSS</p>
+    <p style="margin-top: 10px; font-size: 9pt;">
+      <em>Nota: Os valores acima são encargos pagos pela empresa e não afetam seu salário líquido.</em>
+    </p>
+  </div>
+
+  <!-- ASSINATURAS -->
+  <div class="signature-section">
+    <div class="signature-box">
+      <div class="signature-line">
+        Assinatura do Funcionário
+      </div>
+    </div>
+    <div class="signature-box">
+      <div class="signature-line">
+        Assinatura do Empregador
+      </div>
+    </div>
+  </div>
+
+  <!-- RODAPÉ -->
+  <div class="footer">
+    Documento gerado automaticamente em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}
+  </div>
+</body>
+</html>
+  `.trim()
 }
+
+// ============================================================================
+// Funções Auxiliares
+// ============================================================================
 
 function formatMonth(dateString: string): string {
   const months = [
@@ -225,4 +478,8 @@ function formatMonth(dateString: string): string {
   const year = date.getFullYear()
 
   return `${month}/${year}`
+}
+
+function formatCurrency(value: number): string {
+  return value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 }
