@@ -1,0 +1,68 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from '@/components/ui/toaster';
+import { Toaster as Sonner } from '@/components/ui/sonner';
+
+// Pages
+import Login from '@/pages/Login';
+import Dashboard from '@/pages/Dashboard';
+import Pedidos from '@/pages/Pedidos';
+import AdminPedidos from '@/pages/AdminPedidos';
+import Financeiro from '@/pages/Financeiro';
+import Configuracoes from '@/pages/Configuracoes';
+import Encomendas from '@/pages/Encomendas';
+import Corporativo from '@/pages/Corporativo';
+import CorporateOrder from '@/pages/CorporateOrder';
+import SpecialOrdersAdmin from '@/pages/SpecialOrdersAdmin';
+import MarmitariaPOS from '@/pages/MarmitariaPOS';
+import Marmitaria from '@/pages/Marmitaria';
+import RH from '@/pages/RH';
+
+// Layout
+import { AdminLayout } from '@/components/layout/AdminLayout';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutos
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          {/* 1. ROTAS FIXAS PRIMEIRO */}
+          <Route path="/login" element={<Login />} />
+
+          <Route path="/" element={<AdminLayout />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="pedidos" element={<Pedidos />} />
+            <Route path="financeiro" element={<Financeiro />} />
+            <Route path="admin/pedidos" element={<AdminPedidos />} />
+            <Route path="admin/encomendas" element={<Encomendas />} />
+            <Route path="admin/corporativo" element={<Corporativo />} />
+            <Route path="admin/special-orders" element={<SpecialOrdersAdmin />} />
+            <Route path="marmitaria" element={<Marmitaria />} />
+            <Route path="marmita-pos" element={<MarmitariaPOS />} />
+            <Route path="rh" element={<RH />} />
+            <Route path="configuracoes" element={<Configuracoes />} />
+          </Route>
+
+          {/* 2. ROTAS DINÂMICAS POR ÚLTIMO */}
+          <Route path="/marmita/:slug" element={<CorporateOrder />} />
+          <Route path="/:slug" element={<CorporateOrder />} />
+        </Routes>
+      </BrowserRouter>
+
+      <Toaster />
+      <Sonner />
+    </QueryClientProvider>
+  );
+}
+
+export default App;

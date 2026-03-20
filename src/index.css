@@ -1,0 +1,155 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Cores Cosí - Tema Claro */
+    --background: 42 21% 93%; /* #FFF8DC */
+    --foreground: 25 61% 12%; /* #2C1810 */
+    
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 25 61% 12%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 25 61% 12%;
+    
+    --primary: 25 73% 31%; /* #8B4513 Marrom terra */
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 25 69% 47%; /* #D2691E Terracota */
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 39 77% 83%; /* #F5DEB3 Bege */
+    --muted-foreground: 30 29% 45%; /* #8B7355 */
+    
+    --accent: 30 59% 53%; /* #CD853F Dourado */
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 33 56% 70%; /* #DEB887 */
+    --input: 33 56% 70%;
+    --ring: 25 73% 31%;
+    
+    --radius: 0.5rem;
+    
+    --success: 82 39% 30%; /* #556B2F Verde oliva */
+    --success-foreground: 0 0% 100%;
+    
+    --nature: 75 61% 34%; /* #6B8E23 Verde natural */
+    --nature-foreground: 0 0% 100%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --sidebar-background: 25 61% 12%;
+    --sidebar-foreground: 42 21% 93%;
+    --sidebar-primary: 30 59% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 25 61% 18%;
+    --sidebar-accent-foreground: 42 21% 93%;
+    --sidebar-border: 25 61% 18%;
+    --sidebar-ring: 30 59% 53%;
+    --sidebar-muted: 30 29% 65%;
+  }
+  
+  .dark {
+    --background: 25 61% 8%;
+    --foreground: 0 0% 98%;
+    
+    --card: 25 61% 10%;
+    --card-foreground: 0 0% 98%;
+    
+    --popover: 25 61% 10%;
+    --popover-foreground: 0 0% 98%;
+    
+    --primary: 25 73% 31%;
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 25 69% 47%;
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 30 29% 25%;
+    --muted-foreground: 30 29% 65%;
+    
+    --accent: 30 59% 53%;
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --success: 82 39% 30%;
+    --success-foreground: 0 0% 100%;
+    
+    --nature: 75 61% 34%;
+    --nature-foreground: 0 0% 100%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+    
+    --border: 30 29% 25%;
+    --input: 30 29% 25%;
+    --ring: 25 73% 31%;
+
+    --sidebar-background: 25 61% 6%;
+    --sidebar-foreground: 42 21% 93%;
+    --sidebar-primary: 30 59% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 25 61% 12%;
+    --sidebar-accent-foreground: 42 21% 93%;
+    --sidebar-border: 25 61% 12%;
+    --sidebar-ring: 30 59% 53%;
+    --sidebar-muted: 30 29% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', sans-serif;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--secondary));
+}
+
+@layer utilities {
+  .sidebar-transition {
+    @apply transition-all duration-200 ease-in-out;
+  }
+  
+  .card-hover {
+    @apply transition-shadow duration-200 hover:shadow-lg;
+  }
+  
+  .stat-card {
+    @apply bg-card rounded-lg border p-6 card-hover;
+  }
+}
